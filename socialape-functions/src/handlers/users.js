@@ -5,8 +5,10 @@ const config = requiere('../util/config')
 const firebase = requiere('firebase');
 firebase.inititalizeApp(config)
 
-const { validateSignupData, validateLoginData} = require('../util/validators')
+const { validateSignupData, validateLoginData, reducerUserDetails} = require('../util/validators')
 
+
+//sign users up
 exports.signup = (req, res) => {
     const newUser={
       email: req.body.email,
@@ -60,7 +62,7 @@ exports.signup = (req, res) => {
       }
       });
   }
-
+  //log user in
   exports.login = (req,res) => {
     const user =  {
       email: req.body.email,
@@ -89,7 +91,64 @@ exports.signup = (req, res) => {
     } else return res.status(500).json({error: err.code});
     });
   }
+//Add user details
+exports.addUserDetails = (req, res) => {
+ let userData = reducerUserDetails(req.body);
 
+ db.doc(`/users/${req.user.handle}`).update(userDetails)
+ .then(() => {
+   return res.json({ message: 'Details added succesfully'});
+ })
+ .catch((err) => {
+   console.error(err);
+   return res.status(500).json({ error: err.code});
+ });
+};
+
+//Get own user details
+exports.getAuthenticatedUser = (req, res) => {
+  let userData = {};
+  db.doc(`/users/${req.user.handle}`)
+  .get()
+  .then((doc) => {
+    if (doc.exists) {
+      userData.credentials = doc.data();
+      return db
+      .collection('likes')
+      .where('userHandle', '==', req.user.handle)
+      .get();
+    }
+  })
+  .then((data) => {
+    userData.likes = [];
+    data.forEach( doc => {
+      userData.likes.push(doc.data());
+    });
+    return db.collection('notifications').where('recipient', '==', req.user.handle)
+    .orderBy('createdAt', 'desc').limit(10).get();
+    })
+    .then(data => {
+      userData.notifications = [];
+      data.forEach(doc => {
+        userData.notifications.push({
+          recipient: doc.data().recipient,
+          sender: doc.data().sender,
+          createdAt: doc.data().createdAt,
+          screamId: doc.data().screamId,
+          type: doc.data().type,
+          read: doc.data().read,
+          NotificationId: doc.id
+        })
+      });
+      return res.json(userData);
+    })
+    .catch((error) => {
+      console.error(err);
+      return res.status(500).json({ error: err.code});
+    });
+};
+
+// Upload a profile image for user
   exports.uploadImage = ( req, res) => {
       const BusBoy = require('busboy');
       const path = require('path');
@@ -104,9 +163,9 @@ exports.signup = (req, res) => {
   
 
       busboy.on('file', (fieldname, file, filename, encoding, mimetype) => {
-        console.log(fieldname);
-        console.log(filename);
-        console.log(mimetype);
+       if (mimetype !== 'image/jpeg' && mimetype !== 'image/png') {
+         return res.status(400).json({ error: 'Wrong file type submitted'});
+       }
         //my.image.png
         const imageExtension = filename.split('.')[filename.split('.').length - 1]
        // 325786.png
